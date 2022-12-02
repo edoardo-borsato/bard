@@ -23,11 +23,9 @@ internal class JsonParser : IJsonParser
     public async Task<T> ReadAsync<T>(string text, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Parsing JSON content");
-        var stream = await text.ToStreamAsync();
         var jsonSerializerOptions = new JsonSerializerOptions { WriteIndented = true };
-        var deserializedObject = await JsonSerializer.DeserializeAsync<T>(stream, jsonSerializerOptions, cancellationToken);
+        var deserializedObject = await JsonSerializer.DeserializeAsync<T>(text.ToStream(), jsonSerializerOptions, cancellationToken);
         _logger.LogTrace("JSON content parsed");
-
         return deserializedObject!;
     }
 
