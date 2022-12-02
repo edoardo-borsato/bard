@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "bard": {
+      "commandName": "Project",
+      "commandLineArgs": "backup -t TEST -a dev -f D:\\test.json"
+    }
+  }
+}
