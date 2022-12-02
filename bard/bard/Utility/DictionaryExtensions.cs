@@ -47,7 +47,22 @@ namespace bard.Utility
 
             if (value.N is not null)
             {
-                return int.Parse(value.N);
+                if (int.TryParse(value.N, out var i))
+                {
+                    return i;
+                }
+
+                if (long.TryParse(value.N, out var l))
+                {
+                    return l;
+                }
+
+                if (float.TryParse(value.N, out var f))
+                {
+                    return f;
+                }
+
+                return double.Parse(value.N);
             }
 
             if (value.B is not null)
