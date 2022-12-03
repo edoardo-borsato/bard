@@ -31,9 +31,56 @@ namespace bard
 
         #region Utility Methods
 
-        private static Task DoRestoreAsync(RestoreOption option)
+        private static async Task DoRestoreAsync(RestoreOption option)
         {
-            throw new NotImplementedException();
+            try
+            {
+                _logger.LogInformation("Starting restore: {0} {{{1}}}, {2} {{{3}}}, {4} {{{5}}}, {6} {{{7}}}",
+                    nameof(option.Table), option.Table,
+                    nameof(option.FilePath), option.FilePath,
+                    nameof(option.AwsProfile), option.AwsProfile,
+                    nameof(option.AwsRegion), option.AwsRegion);
+
+                Environment.SetEnvironmentVariable("AWS_PROFILE", option.AwsProfile);
+                Environment.SetEnvironmentVariable("AWS_REGION", option.AwsRegion);
+
+                var jsonItems = await _jsonParser.ReadAsync<IEnumerable<IDictionary<string, object>>>(new FileInfo(option.FilePath));
+                var awsItems = jsonItems.ToAwsItems();
+
+                var client = new AmazonDynamoDBClient();
+                var request = CreateBatchWriteItemRequest(option.Table, awsItems);
+
+                await client.BatchWriteItemAsync(request);
+
+                _logger.LogInformation("Restore completed");
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "An error occurred during restore");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("AWS_PROFILE", null);
+                Environment.SetEnvironmentVariable("AWS_REGION", null);
+            }
+        }
+
+        private static BatchWriteItemRequest CreateBatchWriteItemRequest(string table, IEnumerable<IDictionary<string, AttributeValue>> awsItems)
+        {
+            var writeRequests = awsItems.Select(item => 
+                new WriteRequest(new PutRequest
+                {
+                    Item = new Dictionary<string, AttributeValue>(item)
+                })).ToList();
+
+            var request = new BatchWriteItemRequest
+            {
+                RequestItems = new Dictionary<string, List<WriteRequest>>
+                {
+                    { table, writeRequests }
+                }
+            };
+            return request;
         }
 
         private static async Task DoBackupAsync(BackUpOption option)
