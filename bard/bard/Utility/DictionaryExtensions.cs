@@ -58,7 +58,7 @@ namespace bard.Utility
 
             if (value.N is not null)
             {
-                GetNumber(value.N);
+                return GetNumber(value.N);
             }
 
             if (value.B is not null)
