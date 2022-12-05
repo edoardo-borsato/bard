@@ -1,6 +1,14 @@
 # bard
 
-A tool to backup and restore Dynamo DB tables to/from a JSON file
+A tool to backup and restore Dynamo DB tables to/from a JSON file. With bard it is possible to restore data to an existing Dynamo DB table
+
+## Framework
+
+.NET 6
+
+## Prerequisites
+
+[AWS CLI](https://aws.amazon.com/cli/)
 
 ## Usage
 
