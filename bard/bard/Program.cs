@@ -1,5 +1,7 @@
-﻿using Amazon.DynamoDBv2;
+﻿using Amazon;
+using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using Amazon.Runtime.CredentialManagement;
 using bard.CommandLine;
 using bard.Utility;
 using CommandLine;
@@ -41,13 +43,11 @@ namespace bard
                     nameof(option.AwsProfile), option.AwsProfile,
                     nameof(option.AwsRegion), option.AwsRegion);
 
-                Environment.SetEnvironmentVariable("AWS_PROFILE", option.AwsProfile);
-                Environment.SetEnvironmentVariable("AWS_REGION", option.AwsRegion);
-
                 var jsonItems = await _jsonParser.ReadAsync<IEnumerable<IDictionary<string, object>>>(new FileInfo(option.FilePath));
                 var awsItems = jsonItems.ToAwsItems();
 
-                var client = new AmazonDynamoDBClient();
+                new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
+                var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
                 var request = CreateBatchWriteItemRequest(option.Table, awsItems);
 
                 await client.BatchWriteItemAsync(request);
@@ -57,11 +57,6 @@ namespace bard
             catch (Exception e)
             {
                 _logger.LogError(e, "An error occurred during restore");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("AWS_PROFILE", null);
-                Environment.SetEnvironmentVariable("AWS_REGION", null);
             }
         }
 
@@ -93,10 +88,8 @@ namespace bard
                     nameof(option.AwsProfile), option.AwsProfile,
                     nameof(option.AwsRegion), option.AwsRegion);
 
-                Environment.SetEnvironmentVariable("AWS_PROFILE", option.AwsProfile);
-                Environment.SetEnvironmentVariable("AWS_REGION", option.AwsRegion);
-
-                var client = new AmazonDynamoDBClient();
+                new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
+                var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
                 var request = new ScanRequest(option.Table);
                 var items = (await client.ScanAsync(request)).Items;
 
@@ -109,11 +102,6 @@ namespace bard
             catch (Exception e)
             {
                 _logger.LogError(e, "An error occurred during backup");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("AWS_PROFILE", null);
-                Environment.SetEnvironmentVariable("AWS_REGION", null);
             }
         }
 
