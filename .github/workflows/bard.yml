@@ -3,24 +3,68 @@
 
 name: .NET
 
+env:
+  DOTNET_FRAMEWORK: "8.0"
+
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  [push, pull_request]
+  # push:
+  #   branches: [ "main" ]
+  # pull_request:
+  #   branches: [ "main" ]
+
+defaults:
+  run:
+    working-directory: ./bard
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{env.DOTNET_FRAMEWORK}}.x
+      - name: Test
+        run: dotnet test
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{env.DOTNET_FRAMEWORK}}.x
+      - name: Build
+        run: dotnet build -c Release -f net${{env.DOTNET_FRAMEWORK}}
+      - name: Upload artifacts
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4 #this does not use working-directory!!!
+        with:
+          path: bard/bard/bin/Release/net${{env.DOTNET_FRAMEWORK}}
+          name: build
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        runtime: [linux-x64, win-x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{env.DOTNET_FRAMEWORK}}.x
+      - name: Publish
+        run: dotnet publish -c Release -f net${{env.DOTNET_FRAMEWORK}} -r ${{matrix.runtime}} -p:PublishSingleFile=true --self-contained true
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4 #this does not use working-directory!!!
+        with:
+          path: bard/bard/bin/Release/net${{env.DOTNET_FRAMEWORK}}/${{matrix.runtime}}/publish
+          name: publish-${{matrix.runtime}}
