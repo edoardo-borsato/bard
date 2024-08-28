@@ -4,7 +4,7 @@ A tool to backup and restore Dynamo DB tables to/from a JSON file. With bard it 
 
 ## Framework
 
-.NET 6
+.NET 8
 
 ## Prerequisites
 
