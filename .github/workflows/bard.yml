@@ -97,5 +97,5 @@ jobs:
         run: |
           zip -r publish-win-x64.zip publish-win-x64
           zip -r publish-linux-x64.zip publish-win-x64
-          gh release upload 1.0 publish-win-x64.zip
-          gh release upload 1.0 publish-linux-x64.zip
+          gh release upload ${{github.ref}} publish-win-x64.zip
+          gh release upload ${{github.ref}} publish-linux-x64.zip
