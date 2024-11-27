@@ -2,7 +2,7 @@
   "profiles": {
     "bard": {
       "commandName": "Project",
-      "commandLineArgs": "backup -t TEST -a dev -f D:\\test.json"
+      "commandLineArgs": "batch-delete -t TEST -p dev -r eu-central-1 --partition-key-name id --partition-key-type S --partition-key-value b --sort-key-name number --sort-key-type N --sort-key-value 2"
     }
   }
 }
