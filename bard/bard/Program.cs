@@ -2,7 +2,6 @@
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime.CredentialManagement;
-using Amazon.Runtime.Internal.Transform;
 using bard.CommandLine;
 using bard.Utility;
 using CommandLine;
