@@ -2,7 +2,7 @@
 
 namespace bard.CommandLine;
 
-[Verb("restore", HelpText = "Restore data from given JSON file to a Dynamo DB table")]
+[Verb("restore", HelpText = "Restores data from given JSON file to a Dynamo DB table")]
 internal record RestoreOption
 {
     [Option('t', "table", Required = true, HelpText = "The name of the table")]

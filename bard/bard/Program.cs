@@ -2,6 +2,7 @@
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime.CredentialManagement;
+using Amazon.Runtime.Internal.Transform;
 using bard.CommandLine;
 using bard.Utility;
 using CommandLine;
@@ -24,10 +25,11 @@ internal static class Program
         _logger = loggerFactory.CreateLogger("bard");
 
         var parser = Parser.Default;
-        var result = parser.ParseArguments<BackUpOption, RestoreOption>(args);
+        var result = parser.ParseArguments<BackUpOption, RestoreOption, BatchDeleteOption>(args);
         result
             .WithParsed<BackUpOption>(option => DoBackupAsync(option).Wait())
-            .WithParsed<RestoreOption>(option => DoRestoreAsync(option).Wait());
+            .WithParsed<RestoreOption>(option => DoRestoreAsync(option).Wait())
+            .WithParsed<BatchDeleteOption>(option => DoBatchDeleteAsync(option).Wait());
     }
 
     #region Utility Methods
@@ -36,15 +38,17 @@ internal static class Program
     {
         try
         {
-            _logger.LogInformation("Starting restore: {0} {{{1}}}, {2} {{{3}}}, {4} {{{5}}}, {6} {{{7}}}",
+            _logger.LogInformation("Starting restore: {table} {{{tableName}}}, {filePath} {{{filePathValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
                 nameof(option.Table), option.Table,
                 nameof(option.FilePath), option.FilePath,
                 nameof(option.AwsProfile), option.AwsProfile,
                 nameof(option.AwsRegion), option.AwsRegion);
 
-            var jsonItems = await _jsonParser.ReadAsync<IEnumerable<IDictionary<string, object>>>(new FileInfo(option.FilePath));
-            var awsItems = jsonItems.ToAwsItems();
+            var jsonItems = (await _jsonParser.ReadAsync<IEnumerable<IDictionary<string, object>>>(new FileInfo(option.FilePath))).ToList();
 
+            _logger.LogDebug("Items retrieved. Count: {count}", jsonItems.Count);
+
+            var awsItems = jsonItems.ToAwsItems();
             new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
             var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
             var request = CreateBatchWriteItemRequest(option.Table, awsItems);
@@ -61,7 +65,7 @@ internal static class Program
 
     private static BatchWriteItemRequest CreateBatchWriteItemRequest(string table, IEnumerable<IDictionary<string, AttributeValue?>> awsItems)
     {
-        var writeRequests = awsItems.Select(item => 
+        var writeRequests = awsItems.Select(item =>
             new WriteRequest(new PutRequest
             {
                 Item = new Dictionary<string, AttributeValue?>(item)
@@ -81,7 +85,7 @@ internal static class Program
     {
         try
         {
-            _logger.LogInformation("Starting backup: {0} {{{1}}}, {2} {{{3}}}, {4} {{{5}}}, {6} {{{7}}}",
+            _logger.LogInformation("Starting backup: {table} {{{tableName}}}, {filePath} {{{filePathValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
                 nameof(option.Table), option.Table,
                 nameof(option.FilePath), option.FilePath,
                 nameof(option.AwsProfile), option.AwsProfile,
@@ -92,9 +96,13 @@ internal static class Program
             var request = new ScanRequest(option.Table);
             var items = (await client.ScanAsync(request)).Items;
 
+            _logger.LogDebug("Items retrieved. Count: {count}", items.Count);
+
             var jsonItems = items.ToJsonItems();
 
             await _jsonParser.WriteAsync(jsonItems, new FileInfo(option.FilePath));
+
+            _logger.LogDebug("Items wrote to JSON file");
 
             _logger.LogInformation("Backup completed");
         }
@@ -102,6 +110,90 @@ internal static class Program
         {
             _logger.LogError(e, "An error occurred during backup");
         }
+    }
+
+    private static async Task DoBatchDeleteAsync(BatchDeleteOption option)
+    {
+        try
+        {
+            _logger.LogInformation("Starting batch-delete: {table} {{{tableName}}}, {pkName} {{{pkNameValue}}}, {pkType} {{{pkTypeValue}}}, {pkValue} {{{pkValueValue}}}, {skName} {{{skNameValue}}}, {skType} {{{skTypeValue}}}, {skValue} {{{skValueValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
+                nameof(option.Table), option.Table,
+                nameof(option.PartitionKeyName), option.PartitionKeyName,
+                nameof(option.PartitionKeyType), option.PartitionKeyType,
+                nameof(option.PartitionKeyValue), option.PartitionKeyValue,
+                nameof(option.SortKeyName), option.SortKeyName,
+                nameof(option.SortKeyType), option.SortKeyType,
+                nameof(option.SortKeyValue), option.SortKeyValue,
+                nameof(option.AwsProfile), option.AwsProfile,
+                nameof(option.AwsRegion), option.AwsRegion);
+
+            new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
+            var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
+
+            var keyConditionExpression = "#pk = :pk";
+            var expressionAttributeNames = new Dictionary<string, string>
+            {
+                { "#pk", option.PartitionKeyName }
+            };
+            var expressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":pk", GetAttributeValue(option.PartitionKeyType, option.PartitionKeyValue) }
+            };
+
+            if (option.SortKeyName is not null)
+            {
+                if (option.SortKeyType is null || option.SortKeyValue is null)
+                {
+                    _logger.LogError("When sort-key-name is set, all sort-key related parameter must be provide");
+                    return;
+                }
+
+                keyConditionExpression += " AND #sk = :sk";
+                expressionAttributeNames.Add("#sk", option.SortKeyName);
+                expressionAttributeValues.Add(":sk", GetAttributeValue(option.SortKeyType, option.SortKeyValue));
+            }
+
+            // --key-condition-expression "OrganizationId = :pk" --expression-attribute-values '{\":pk\":{\"S\":\"aba45536-a938-4464-aad6-5f56c31a6a56\"}}'"
+            var queryRequest = new QueryRequest(option.Table)
+            {
+                KeyConditionExpression = keyConditionExpression,
+                ExpressionAttributeNames = expressionAttributeNames,
+                ExpressionAttributeValues = expressionAttributeValues
+            };
+            var items = (await client.QueryAsync(queryRequest)).Items;
+
+            _logger.LogDebug("Items retrieved. Count: {count}", items.Count);
+
+            var deleteTasks = new List<Task>();
+            var count = 0;
+            foreach (var item in items)
+            {
+                _logger.LogTrace("Deleting item: {currentItem} of {itemsCount}", ++count, items.Count);
+                deleteTasks.Add(client.DeleteItemAsync(new DeleteItemRequest(option.Table, item)));
+                await Task.Delay(TimeSpan.FromMilliseconds(20));    // add some delay to not use too much AWS write capacity
+            }
+
+            _logger.LogDebug("Items deleted");
+
+            Task.WaitAll(deleteTasks.ToArray());
+
+            _logger.LogInformation("Batch-delete completed");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "An error occurred during Batch-delete");
+        }
+    }
+
+    private static AttributeValue GetAttributeValue(string type, string value)
+    {
+        return type switch
+        {
+            "B" => new AttributeValue { B = value.ToStream() },
+            "S" => new AttributeValue { S = value },
+            "N" => new AttributeValue { N = value },
+            _ => throw new ArgumentOutOfRangeException($"Invalid key type: {type}. Supported types are `B`, `S` and `N`")
+        };
     }
 
     #endregion
