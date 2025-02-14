@@ -1,4 +1,5 @@
-﻿using Amazon;
+﻿using System.Diagnostics;
+using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime.CredentialManagement;
@@ -89,13 +90,27 @@ internal static class Program
                 nameof(option.FilePath), option.FilePath,
                 nameof(option.AwsProfile), option.AwsProfile,
                 nameof(option.AwsRegion), option.AwsRegion);
+            var sw = Stopwatch.StartNew();
 
             new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
             var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
-            var request = new ScanRequest(option.Table);
-            var items = (await client.ScanAsync(request)).Items;
 
-            _logger.LogDebug("Items retrieved. Count: {count}", items.Count);
+            var items = new List<Dictionary<string, AttributeValue>>();
+            Dictionary<string, AttributeValue>? lastKeyEvaluated = null;
+            
+            do
+            {
+                var request = new ScanRequest(option.Table)
+                {
+                    ExclusiveStartKey = lastKeyEvaluated
+                };
+                var response = await client.ScanAsync(request);
+                items.AddRange(response.Items);
+                lastKeyEvaluated = response.LastEvaluatedKey;
+                _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
+            } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
+
+            _logger.LogDebug("Items retrieved. Count: {count}. Elapsed {elapsed}", items.Count, sw.Elapsed);
 
             var jsonItems = items.ToJsonItems();
 
