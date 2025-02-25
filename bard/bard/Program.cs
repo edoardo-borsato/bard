@@ -38,11 +38,7 @@ internal static class Program
     {
         try
         {
-            _logger.LogInformation("Starting restore: {table} {{{tableName}}}, {filePath} {{{filePathValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
-                nameof(option.Table), option.Table,
-                nameof(option.FilePath), option.FilePath,
-                nameof(option.AwsProfile), option.AwsProfile,
-                nameof(option.AwsRegion), option.AwsRegion);
+            _logger.LogInformation("Starting restore: {option}", option);
 
             var jsonItems = (await _jsonParser.ReadAsync<IEnumerable<IDictionary<string, object>>>(new FileInfo(option.FilePath))).ToList();
 
@@ -85,11 +81,7 @@ internal static class Program
     {
         try
         {
-            _logger.LogInformation("Starting backup: {table} {{{tableName}}}, {filePath} {{{filePathValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
-                nameof(option.Table), option.Table,
-                nameof(option.FilePath), option.FilePath,
-                nameof(option.AwsProfile), option.AwsProfile,
-                nameof(option.AwsRegion), option.AwsRegion);
+            _logger.LogInformation("Starting backup: {option}", option);
             var sw = Stopwatch.StartNew();
 
             new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
@@ -130,16 +122,7 @@ internal static class Program
     {
         try
         {
-            _logger.LogInformation("Starting batch-delete: {table} {{{tableName}}}, {pkName} {{{pkNameValue}}}, {pkType} {{{pkTypeValue}}}, {pkValue} {{{pkValueValue}}}, {skName} {{{skNameValue}}}, {skType} {{{skTypeValue}}}, {skValue} {{{skValueValue}}}, {profile} {{{profileName}}}, {region} {{{regionValue}}}",
-                nameof(option.Table), option.Table,
-                nameof(option.PartitionKeyName), option.PartitionKeyName,
-                nameof(option.PartitionKeyType), option.PartitionKeyType,
-                nameof(option.PartitionKeyValue), option.PartitionKeyValue,
-                nameof(option.SortKeyName), option.SortKeyName,
-                nameof(option.SortKeyType), option.SortKeyType,
-                nameof(option.SortKeyValue), option.SortKeyValue,
-                nameof(option.AwsProfile), option.AwsProfile,
-                nameof(option.AwsRegion), option.AwsRegion);
+            _logger.LogInformation("Starting batch-delete: {option}", option);
 
             new CredentialProfileStoreChain().TryGetAWSCredentials(option.AwsProfile, out var awsCredentials);
             var client = new AmazonDynamoDBClient(awsCredentials, RegionEndpoint.GetBySystemName(option.AwsRegion));
@@ -167,14 +150,25 @@ internal static class Program
                 expressionAttributeValues.Add(":sk", GetAttributeValue(option.SortKeyType, option.SortKeyValue));
             }
 
-            // --key-condition-expression "OrganizationId = :pk" --expression-attribute-values '{\":pk\":{\"S\":\"aba45536-a938-4464-aad6-5f56c31a6a56\"}}'"
-            var queryRequest = new QueryRequest(option.Table)
+            var items = new List<Dictionary<string, AttributeValue>>();
+            Dictionary<string, AttributeValue>? lastKeyEvaluated = null;
+            do
             {
-                KeyConditionExpression = keyConditionExpression,
-                ExpressionAttributeNames = expressionAttributeNames,
-                ExpressionAttributeValues = expressionAttributeValues
-            };
-            var items = (await client.QueryAsync(queryRequest)).Items;
+                // --key-condition-expression "OrganizationId = :pk" --expression-attribute-values '{\":pk\":{\"S\":\"aba45536-a938-4464-aad6-5f56c31a6a56\"}}'"
+                var queryRequest = new QueryRequest(option.Table)
+                {
+                    KeyConditionExpression = keyConditionExpression,
+                    ExpressionAttributeNames = expressionAttributeNames,
+                    ExpressionAttributeValues = expressionAttributeValues,
+                    ExclusiveStartKey = lastKeyEvaluated
+                };
+                var response = await client.QueryAsync(queryRequest);
+                items.AddRange(response.Items);
+                lastKeyEvaluated = response.LastEvaluatedKey;
+                _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
+            } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
+
+            
 
             _logger.LogDebug("Items retrieved. Count: {count}", items.Count);
 
