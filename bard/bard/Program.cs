@@ -89,18 +89,71 @@ internal static class Program
 
             var items = new List<Dictionary<string, AttributeValue>>();
             Dictionary<string, AttributeValue>? lastKeyEvaluated = null;
-            
-            do
+
+            switch (option.Method)
             {
-                var request = new ScanRequest(option.Table)
-                {
-                    ExclusiveStartKey = lastKeyEvaluated
-                };
-                var response = await client.ScanAsync(request);
-                items.AddRange(response.Items);
-                lastKeyEvaluated = response.LastEvaluatedKey;
-                _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
-            } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
+                case "scan":
+                    do
+                    {
+                        var request = new ScanRequest(option.Table)
+                        {
+                            ExclusiveStartKey = lastKeyEvaluated
+                        };
+                        var response = await client.ScanAsync(request);
+                        items.AddRange(response.Items);
+                        lastKeyEvaluated = response.LastEvaluatedKey;
+                        _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
+                    } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
+                    break;
+                case "query":
+                    if (option.PartitionKeyName is null || option.PartitionKeyType is null || option.PartitionKeyValue is null)
+                    {
+                        _logger.LogError("If method is `query` at least partition key info must be provide");
+                        return;
+                    }
+
+                    var keyConditionExpression = "#pk = :pk";
+                    var expressionAttributeNames = new Dictionary<string, string>
+                    {
+                        { "#pk", option.PartitionKeyName }
+                    };
+                    var expressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        { ":pk", GetAttributeValue(option.PartitionKeyType, option.PartitionKeyValue) }
+                    };
+
+                    if (option.SortKeyName is not null)
+                    {
+                        if (option.SortKeyType is null || option.SortKeyValue is null)
+                        {
+                            _logger.LogError("When sort-key-name is set, all sort-key related parameter must be provide");
+                            return;
+                        }
+
+                        keyConditionExpression += " AND #sk = :sk";
+                        expressionAttributeNames.Add("#sk", option.SortKeyName);
+                        expressionAttributeValues.Add(":sk", GetAttributeValue(option.SortKeyType, option.SortKeyValue));
+                    }
+
+                    do
+                    {
+                        // --key-condition-expression "OrganizationId = :pk" --expression-attribute-values '{\":pk\":{\"S\":\"aba45536-a938-4464-aad6-5f56c31a6a56\"}}'"
+                        var queryRequest = new QueryRequest(option.Table)
+                        {
+                            KeyConditionExpression = keyConditionExpression,
+                            ExpressionAttributeNames = expressionAttributeNames,
+                            ExpressionAttributeValues = expressionAttributeValues,
+                            ExclusiveStartKey = lastKeyEvaluated
+                        };
+                        var response = await client.QueryAsync(queryRequest);
+                        items.AddRange(response.Items);
+                        lastKeyEvaluated = response.LastEvaluatedKey;
+                        _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
+                    } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(option.Method), "Invalid Method parameter");
+            }
 
             _logger.LogDebug("Items retrieved. Count: {count}. Elapsed {elapsed}", items.Count, sw.Elapsed);
 
@@ -167,8 +220,6 @@ internal static class Program
                 lastKeyEvaluated = response.LastEvaluatedKey;
                 _logger.LogDebug("Items retrieved in this page. Count: {count}", items.Count);
             } while (lastKeyEvaluated != null && lastKeyEvaluated.Count != 0);
-
-            
 
             _logger.LogDebug("Items retrieved. Count: {count}", items.Count);
 
